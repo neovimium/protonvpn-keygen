@@ -1,5 +1,5 @@
 # ProtonVPN Keygen
-You can use the [Github pages site](https://neovimium.github.io/protonvpn-keygen/) to test, or if you already have an automated solution, you can use [the python script](https://github.com/neovimium/protonvpn-keygen/blob/main/generate.py).
+You can use the [Github pages site](https://neovimium.github.io/protonvpn-keygen/) to test, or if you already have an automated solution, you can use one of the python scripts.
 
 Turns out Proton uses different key generation functionality than normal Wireguard.
 ([found here](https://github.com/paulmillr/noble-ed25519))
