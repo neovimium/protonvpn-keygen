@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ed25519 Keygen</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #ffffff;
+            font-family: Consolas, monospace;
+            padding: 20px;
+        }
+        button {
+            background-color: #333333;
+            color: #ffffff;
+            border: 1px solid #555555;
+            padding: 10px 20px;
+            font-family: Consolas, monospace;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #444444;
+        }
+        textarea {
+            background-color: #2a2a2a;
+            color: #ffffff;
+            border: 1px solid #555555;
+            font-family: Consolas, monospace;
+            width: 100%;
+            height: 24px;
+            padding: 10px;
+            margin-bottom: 10px;
+            resize: vertical;
+        }
+        .key-section {
+            margin-bottom: 20px;
+        }
+        .copy-btn {
+            background-color: #444444;
+            color: #ffffff;
+            border: 1px solid #666666;
+            padding: 5px 15px;
+            font-family: Consolas, monospace;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .copy-btn:hover {
+            background-color: #555555;
+        }
+    </style>
+</head>
+<body>
+    <h1>Ed25519 Keygen</h1>
+    <button onclick="generateKeys()">Regenerate Keys</button>
+    <div id="output" style="display: none;">
+        <div class="key-section">
+            <h3>Ed25519 Private (Unused):</h3>
+            <textarea id="ed25519Private" readonly></textarea>
+            <button class="copy-btn" onclick="copyToClipboard('ed25519Private')">Copy</button>
+        </div>
+        <div class="key-section">
+            <h3>Ed25519 Public (API):</h3>
+            <textarea id="ed25519Public" readonly></textarea>
+            <button class="copy-btn" onclick="copyToClipboard('ed25519Public')">Copy</button>
+        </div>
+        <div class="key-section">
+            <h3>X25519 Private (WG):</h3>
+            <textarea id="x25519Private" readonly></textarea>
+            <button class="copy-btn" onclick="copyToClipboard('x25519Private')">Copy</button>
+        </div>
+    </div>
+
+    <script>
+const CURVE = {
+    a: -1n,
+    d: 37095705934669439343138083508754565189542113879843219016388785533085940283555n,
+    P: 2n ** 255n - 19n,
+    n: 2n ** 252n + 27742317777372353535851937790883648493n,
+    h: 8n,
+    Gx: 15112221349535400772501151409588531511454012693041857206046113283949847762202n,
+    Gy: 46316835694926478169428394003475163141307993866256225615783033603165251855960n,
+};
+
+const B32 = 32;
+const SQRT_M1 = 19681161376707505956807079304988542015446066515923890162744021073123829784752n;
+
+function bytesToHex(uint8a) {
+    let hex = '';
+    for (let i = 0; i < uint8a.length; i++) {
+        hex += uint8a[i].toString(16).padStart(2, '0');
+    }
+    return hex;
+}
+
+function hexToBytes(hex) {
+    if (typeof hex !== 'string') {
+        throw new TypeError('hexToBytes: expected string, got ' + typeof hex);
+    }
+    if (hex.length % 2) throw new Error('hexToBytes: received invalid unpadded hex');
+    const array = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < array.length; i++) {
+        const j = i * 2;
+        array[i] = Number.parseInt(hex.slice(j, j + 2), 16);
+    }
+    return array;
+}
+
+function bytesToNumberLE(uint8a) {
+    let value = 0n;
+    for (let i = 0; i < uint8a.length; i++) {
+        value += BigInt(uint8a[i]) << (8n * BigInt(i));
+    }
+    return value;
+}
+
+function mod(a, b = CURVE.P) {
+    const res = a % b;
+    return res >= 0n ? res : b + res;
+}
+
+function invert(number, modulo = CURVE.P) {
+    if (number === 0n || modulo <= 0n) {
+        throw new Error(`invert: expected positive integers, got n=${number} mod=${modulo}`);
+    }
+    let a = mod(number, modulo);
+    let b = modulo;
+    let x = 0n, y = 1n, u = 1n, v = 0n;
+    while (a !== 0n) {
+        const q = b / a;
+        const r = b % a;
+        const m = x - u * q;
+        const n = y - v * q;
+        b = a, a = r, x = u, y = v, u = m, v = n;
+    }
+    const gcd = b;
+    if (gcd !== 1n) throw new Error('invert: does not exist');
+    return mod(x, modulo);
+}
+
+function pow2(x, power) {
+    const { P } = CURVE;
+    let res = x;
+    while (power-- > 0n) {
+        res *= res;
+        res %= P;
+    }
+    return res;
+}
+
+function pow_2_252_3(x) {
+    const { P } = CURVE;
+    const x2 = (x * x) % P;
+    const b2 = (x2 * x) % P;
+    const b4 = (pow2(b2, 2n) * b2) % P;
+    const b5 = (pow2(b4, 1n) * x) % P;
+    const b10 = (pow2(b5, 5n) * b5) % P;
+    const b20 = (pow2(b10, 10n) * b10) % P;
+    const b40 = (pow2(b20, 20n) * b20) % P;
+    const b80 = (pow2(b40, 40n) * b40) % P;
+    const b160 = (pow2(b80, 80n) * b80) % P;
+    const b240 = (pow2(b160, 80n) * b80) % P;
+    const b250 = (pow2(b240, 10n) * b10) % P;
+    const pow_p_5_8 = (pow2(b250, 2n) * x) % P;
+    return pow_p_5_8;
+}
+
+function uvRatio(u, v) {
+    const v3 = mod(v * v * v);
+    const v7 = mod(v3 * v3 * v);
+    let x = mod(u * v3 * pow_2_252_3(u * v7));
+    const vx2 = mod(v * x * x);
+    const root1 = x;
+    const root2 = mod(x * SQRT_M1);
+    const useRoot1 = vx2 === u;
+    const useRoot2 = vx2 === mod(-u);
+    const noRoot = vx2 === mod(-u * SQRT_M1);
+    if (useRoot1) x = root1;
+    if (useRoot2 || noRoot) x = root2;
+    if ((mod(x) & 1n) === 1n) x = mod(-x);
+    return { isValid: useRoot1 || useRoot2, value: x };
+}
+
+class Point {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    static fromHex(hash) {
+        const { d, P } = CURVE;
+        const bytes = hash instanceof Uint8Array ? hash : hexToBytes(hash);
+        if (bytes.length !== 32) throw new Error('Point.fromHex: expected 32 bytes');
+        
+        const last = bytes[31];
+        const normedLast = last & ~0x80;
+        const isLastByteOdd = (last & 0x80) !== 0;
+        const normed = Uint8Array.from(Array.from(bytes.slice(0, 31)).concat(normedLast));
+        const y = bytesToNumberLE(normed);
+        
+        if (y >= P) throw new Error('Point.fromHex expects hex <= Fp');
+        
+        const y2 = mod(y * y);
+        const u = mod(y2 - 1n);
+        const v = mod(d * y2 + 1n);
+        let { isValid, value: x } = uvRatio(u, v);
+        
+        if (!isValid) throw new Error('Point.fromHex: invalid y coordinate');
+        
+        const isXOdd = (x & 1n) === 1n;
+        if (isLastByteOdd !== isXOdd) {
+            x = mod(-x);
+        }
+        return new Point(x, y);
+    }
+
+    multiply(scalar) {
+        return ExtendedPoint.fromAffine(this).multiply(scalar).toAffine();
+    }
+
+    toRawBytes() {
+        const hex = this.y.toString(16).padStart(64, '0');
+        const u8 = new Uint8Array(B32);
+        for (let i = hex.length - 2, j = 0; j < B32 && i >= 0; i -= 2, j++) {
+            u8[j] = Number.parseInt(hex[i] + hex[i + 1], 16);
+        }
+        const mask = this.x & 1n ? 0x80 : 0;
+        u8[B32 - 1] |= mask;
+        return u8;
+    }
+
+    toX25519() {
+        return mod((1n + this.y) * invert(1n - this.y));
+    }
+
+    static async fromPrivateKey(privateKey) {
+        const privBytes = await sha512(normalizePrivateKey(privateKey));
+        return Point.BASE.multiply(encodePrivate(privBytes));
+    }
+}
+
+Point.BASE = new Point(CURVE.Gx, CURVE.Gy);
+
+class ExtendedPoint {
+    constructor(x, y, z, t) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.t = t;
+    }
+
+    static fromAffine(p) {
+        if (p.x === 0n && p.y === 1n) return ExtendedPoint.ZERO;
+        return new ExtendedPoint(p.x, p.y, 1n, mod(p.x * p.y));
+    }
+
+    add(other) {
+        const X1 = this.x, Y1 = this.y, Z1 = this.z, T1 = this.t;
+        const X2 = other.x, Y2 = other.y, Z2 = other.z, T2 = other.t;
+        const A = mod((Y1 - X1) * (Y2 + X2));
+        const B = mod((Y1 + X1) * (Y2 - X2));
+        const F = mod(B - A);
+        if (F === 0n) return this.double();
+        const C = mod(Z1 * 2n * T2);
+        const D = mod(T1 * 2n * Z2);
+        const E = mod(D + C);
+        const G = mod(B + A);
+        const H = mod(D - C);
+        const X3 = mod(E * F);
+        const Y3 = mod(G * H);
+        const T3 = mod(E * H);
+        const Z3 = mod(F * G);
+        return new ExtendedPoint(X3, Y3, Z3, T3);
+    }
+
+    double() {
+        const X1 = this.x, Y1 = this.y, Z1 = this.z;
+        const { a } = CURVE;
+        const A = mod(X1 ** 2n);
+        const B = mod(Y1 ** 2n);
+        const C = mod(2n * Z1 ** 2n);
+        const D = mod(a * A);
+        const E = mod((X1 + Y1) ** 2n - A - B);
+        const G = mod(D + B);
+        const F = mod(G - C);
+        const H = mod(D - B);
+        const X3 = mod(E * F);
+        const Y3 = mod(G * H);
+        const T3 = mod(E * H);
+        const Z3 = mod(F * G);
+        return new ExtendedPoint(X3, Y3, Z3, T3);
+    }
+
+    multiply(scalar) {
+        let n = typeof scalar === 'bigint' ? scalar : BigInt(scalar);
+        if (n === 1n) return this;
+        let p = ExtendedPoint.ZERO;
+        let d = this;
+        while (n > 0n) {
+            if (n & 1n) p = p.add(d);
+            d = d.double();
+            n >>= 1n;
+        }
+        return p;
+    }
+
+    toAffine(invZ = invert(this.z)) {
+        const x = mod(this.x * invZ);
+        const y = mod(this.y * invZ);
+        return new Point(x, y);
+    }
+}
+
+ExtendedPoint.BASE = new ExtendedPoint(CURVE.Gx, CURVE.Gy, 1n, mod(CURVE.Gx * CURVE.Gy));
+ExtendedPoint.ZERO = new ExtendedPoint(0n, 1n, 1n, 0n);
+
+function normalizePrivateKey(key) {
+    if (typeof key === 'string') {
+        if (key.length !== 64) throw new Error('Expected 32 bytes of private key');
+        return hexToBytes(key);
+    } else if (key instanceof Uint8Array) {
+        if (key.length !== 32) throw new Error('Expected 32 bytes of private key');
+        return key;
+    } else {
+        throw new TypeError('Expected valid private key');
+    }
+}
+
+function encodePrivate(privateBytes) {
+    const last = B32 - 1;
+    const head = privateBytes.slice(0, B32);
+    head[0] &= 248;
+    head[last] &= 127;
+    head[last] |= 64;
+    return mod(bytesToNumberLE(head), CURVE.n);
+}
+
+async function sha512(message) {
+    const buffer = await crypto.subtle.digest('SHA-512', message.buffer || message);
+    return new Uint8Array(buffer);
+}
+
+function numberToBytesPadded(num, length = B32) {
+    const hex = num.toString(16).padStart(length * 2, '0');
+    return hexToBytes(hex).reverse();
+}
+
+function randomBytes(bytesLength = 32) {
+    return crypto.getRandomValues(new Uint8Array(bytesLength));
+}
+
+function ed25519ToX25519Private(ed25519PrivateKey) {
+    const privateBytes = ed25519PrivateKey instanceof Uint8Array ? 
+        ed25519PrivateKey : hexToBytes(ed25519PrivateKey);
+    
+    return sha512(privateBytes).then(hash => {
+        const h = hash.slice(0, 32);
+        h[0] &= 248;
+        h[31] &= 127;
+        h[31] |= 64;
+        return h;
+    });
+}
+
+function randomPrivateKey() {
+    let i = 1024;
+    while (i--) {
+        const b32 = randomBytes(32);
+        const num = bytesToNumberLE(b32);
+        if (num > 1n && num < CURVE.n) return b32;
+    }
+    throw new Error('Valid private key was not found in 1024 iterations');
+}
+
+async function getPublicKey(privateKey) {
+    const key = await Point.fromPrivateKey(privateKey);
+    return key.toRawBytes();
+}
+
+async function generateKeys() {
+    try {
+        const ed25519PrivateKeyBytes = randomPrivateKey();
+        const ed25519PublicKeyBytes = await getPublicKey(ed25519PrivateKeyBytes);
+        const x25519PrivateKeyBytes = await ed25519ToX25519Private(ed25519PrivateKeyBytes);
+        
+        const ed25519PrivateB64 = btoa(String.fromCharCode(...ed25519PrivateKeyBytes));
+        const ed25519PublicB64 = btoa(String.fromCharCode(...ed25519PublicKeyBytes));
+        const x25519PrivateB64 = btoa(String.fromCharCode(...x25519PrivateKeyBytes));
+        
+        document.getElementById('ed25519Private').value = ed25519PrivateB64;
+        document.getElementById('ed25519Public').value = ed25519PublicB64;
+        document.getElementById('x25519Private').value = x25519PrivateB64;
+        document.getElementById('output').style.display = 'block';
+    } catch (error) {
+        console.error('Key generation failed:', error);
+        alert('Key generation failed: ' + error.message);
+    }
+}
+
+function copyToClipboard(elementId) {
+    const textarea = document.getElementById(elementId);
+    textarea.select();
+    document.execCommand('copy');
+}
+
+window.addEventListener('load', function() {
+    generateKeys();
+});
+    </script>
+</body>
+</html>
