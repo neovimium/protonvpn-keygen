@@ -16,6 +16,6 @@ Ed25519 and X25519 use the same underlying Curve25519, but Ed25519 is for signat
 The conversion essentially transforms the signing key format into a key exchange format while preserving the cryptographic relationship.
 
 # Usage
-Ed25519 Private keys are unused.
-Ed25519 Public keys are for the ProtonVPN API.
+Ed25519 Private keys are unused.\
+Ed25519 Public keys are for the ProtonVPN API.\
 X25519 Private keys are for your Wireguard Client.
