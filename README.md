@@ -4,9 +4,9 @@ Turns out Proton uses different key generation functionality than normal Wiregua
 
 # How?
 Ed25519 → X25519 conversion:
-1. Take the original Ed25519 private key (32 bytes)\
-2. Hash it again with SHA-512 and take the first 32 bytes\
-3. Apply X25519 clamping, which clears specific bits to ensure the key meets X25519 requirements\
+1. Take the original Ed25519 private key (32 bytes)
+2. Hash it again with SHA-512 and take the first 32 bytes
+3. Apply X25519 clamping, which clears specific bits to ensure the key meets X25519 requirements
 4. This produces an X25519 private key that WireGuard can use
 
 # Why?
